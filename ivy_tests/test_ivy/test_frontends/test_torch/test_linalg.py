@@ -1252,3 +1252,86 @@ def test_torch_multi_dot(
         test_values=True,
         tensors=x,
     )
+
+
+@st.composite
+def _generate_characteristic_equation_solver_dtype_and_arrays(draw):
+    input_dtype = [draw(st.sampled_from(draw(helpers.get_dtypes("numeric"))))]
+    matrices_dims = draw(
+        st.lists(st.integers(min_value=2, max_value=10), min_size=2, max_size=2)
+    )
+
+    matrix = draw(
+        helpers.dtype_and_values(
+            shape=(matrices_dims[0], matrices_dims[1]),
+            dtype=input_dtype,
+            min_value=-10,
+            max_value=10,
+        )
+    )
+
+    return input_dtype, matrix
+
+@handle_frontend_test(
+    fn_tree="torch.linalg.characteristic_equation_solver",
+    dtype_x=_generate_characteristic_equation_solver_dtype_and_arrays(),
+)
+def test_torch_characteristic_equation_solver(
+    dtype_x,
+    on_device,
+    fn_tree,
+    frontend,
+    test_flags,
+):
+    dtype, x = dtype_x
+    helpers.test_frontend_function(
+        input_dtypes=dtype,
+        test_flags=test_flags,
+        on_device=on_device,
+        frontend=frontend,
+        fn_tree=fn_tree,
+        test_values=True,
+        tensors=x,
+    )
+
+# solve_ex
+@handle_frontend_test(
+    fn_tree="torch.linalg.solve_ex",
+    dtype_and_data=helpers.dtype_and_values(
+        available_dtypes=helpers.get_dtypes("valid"),
+        min_value=0,
+        max_value=10,
+        shape=helpers.ints(min_value=2, max_value=5).map(lambda x: tuple([x, x + 1])),
+        safety_factor_scale="log",
+        small_abs_safety_factor=6,
+    ).filter(
+        lambda x: "float16" not in x[0]
+        and "bfloat16" not in x[0]
+        and np.linalg.cond(x[1][0][:, :-1]) < 1 / sys.float_info.epsilon
+        and np.linalg.det(x[1][0][:, :-1]) != 0
+        and np.linalg.cond(x[1][0][:, -1].reshape(-1, 1)) < 1 / sys.float_info.epsilon
+    ),
+    check=st.booleans()
+)
+def test_torch_solve_ex(
+    *,
+    dtype_and_data,
+    check,
+    on_device,
+    fn_tree,
+    frontend,
+    test_flags,
+):
+    input_dtype, data = dtype_and_data
+    input = data[0][:, :-1]
+    other = data[0][:, -1].reshape(-1, 1)
+    helpers.test_frontend_function(
+        input_dtypes=[input_dtype[0], input_dtype[0]],
+        frontend=frontend,
+        test_flags=test_flags,
+        fn_tree=fn_tree,
+        on_device=on_device,
+        A=input,
+        B=other,
+        check_errors=check,
+    )
